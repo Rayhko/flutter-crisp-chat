@@ -190,8 +190,21 @@ public class SwiftFlutterCrispChatPlugin: NSObject, FlutterPlugin, UIApplication
                                        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
         if CrispSDK.isCrispPushNotification(notification) {
             CrispSDK.handlePushNotification(notification)
+            if #available(iOS 14.0, *) {
+                completionHandler([.banner, .sound])
+            } else {
+                completionHandler([.alert, .sound])
+            }
+            return
         }
 
+        // Notification remote (FCM) → on supprime, Flutter la gère via onMessage + flutter_local_notifications
+        if notification.request.trigger is UNPushNotificationTrigger {
+            completionHandler([])
+            return
+        }
+
+        // Notification locale (flutter_local_notifications) → on affiche
         if #available(iOS 14.0, *) {
             completionHandler([.banner, .sound])
         } else {
