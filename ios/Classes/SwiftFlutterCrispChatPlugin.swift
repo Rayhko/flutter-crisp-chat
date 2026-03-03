@@ -1,16 +1,20 @@
 import Flutter
 import UIKit
+import UserNotifications
 import Crisp
 
 /// [SwiftFlutterCrispChatPlugin] manages the integration of Crisp Chat SDK with Flutter,
 /// handling all method channel callbacks and implementing UIApplicationDelegate methods.
-public class SwiftFlutterCrispChatPlugin: NSObject, FlutterPlugin, UIApplicationDelegate {
+public class SwiftFlutterCrispChatPlugin: NSObject, FlutterPlugin, UIApplicationDelegate, UNUserNotificationCenterDelegate {
 
     // The method channel used to communicate with Flutter
     private var channel: FlutterMethodChannel?
 
     // Configuration object for Crisp SDK
     private var crispConfig: CrispConfig?
+
+    // Keep a weak reference to any previously set UNUserNotificationCenter delegate
+    private weak var previousNotificationCenterDelegate: UNUserNotificationCenterDelegate?
 
     /// Registers the plugin with the Flutter engine.
     /// This sets up the method channel and adds the plugin as a delegate for method calls.
@@ -21,8 +25,25 @@ public class SwiftFlutterCrispChatPlugin: NSObject, FlutterPlugin, UIApplication
         registrar.addMethodCallDelegate(instance, channel: channel)
         registrar.addApplicationDelegate(instance)
 
-        // Set UNUserNotificationCenter delegate
-        UNUserNotificationCenter.current().delegate = instance
+        // Decide whether to replace the existing UNUserNotificationCenter delegate.
+        // If the current delegate is Flutter's lifecycle provider (which multiplexes
+        // notifications to all registered plugins), do not replace it to avoid
+        // recursive forwarding loops. Otherwise, replace it and forward to the
+        // previous delegate so any existing notification handling continues to work
+        let center = UNUserNotificationCenter.current()
+        var shouldReplaceDelegate = true
+
+        if let existingDelegate = center.delegate {
+            if let flutterProviderProtocol = NSProtocolFromString("FlutterAppLifeCycleProvider"),
+               (existingDelegate as AnyObject).conforms(to: flutterProviderProtocol) {
+                shouldReplaceDelegate = false
+            }
+        }
+
+        if shouldReplaceDelegate {
+            instance.previousNotificationCenterDelegate = center.delegate
+            center.delegate = instance
+        }
     }
 
     /// Handles method calls from Flutter to native iOS.
@@ -39,21 +60,7 @@ public class SwiftFlutterCrispChatPlugin: NSObject, FlutterPlugin, UIApplication
 
             // Initialize Crisp configuration from arguments
             let crispConfig = CrispConfig.fromJson(args)
-
-            // Validate websiteID (nil or empty)
-            let websiteID = crispConfig.websiteID.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !websiteID.isEmpty else {
-                result(
-                    FlutterError(
-                        code: "INVALID_ARGUMENTS",
-                        message: "Crisp website ID not found.",
-                        details: nil
-                    )
-                )
-                return
-            }
-
-            CrispSDK.configure(websiteID: websiteID)
+            CrispSDK.configure(websiteID: crispConfig.websiteID)
 
             // Configure Crisp session if additional data is provided
             if let tokenId = crispConfig.tokenId {
@@ -120,7 +127,7 @@ public class SwiftFlutterCrispChatPlugin: NSObject, FlutterPlugin, UIApplication
             } else {
                 result(FlutterError(code: "NO_SESSION", message: "No active session found", details: nil))
             }
-            
+
         case "setSessionSegments":
             // Sets session segment
             guard let args = call.arguments as? [String: Any],
@@ -129,7 +136,7 @@ public class SwiftFlutterCrispChatPlugin: NSObject, FlutterPlugin, UIApplication
                 result(FlutterError(code: "INVALID_ARGUMENTS", message: "Expected segments of type String and overwrite of type Bool.", details: nil))
                 return
             }
-            
+
             let previousSegments = CrispSDK.session.segments
             CrispSDK.session.segments = overwrite ? segments : (previousSegments ?? []) + segments
             result(nil)
@@ -164,11 +171,6 @@ public class SwiftFlutterCrispChatPlugin: NSObject, FlutterPlugin, UIApplication
             let event = SessionEvent(name: name, color: eventColor)
             CrispSDK.session.pushEvents([event])
             result(nil)
-
-        case "openChatboxFromNotification":
-            // Android-specific feature; iOS handles notifications via APNs delegates
-            result(false)
-
         default:
             // Handles unimplemented method calls
             result(FlutterMethodNotImplemented)
@@ -193,8 +195,21 @@ public class SwiftFlutterCrispChatPlugin: NSObject, FlutterPlugin, UIApplication
             } else {
                 completionHandler([.alert, .sound])
             }
+            return
+        }
+
+        // Forward to previous delegate if it implements this method
+        if let prev = previousNotificationCenterDelegate as? NSObjectProtocol,
+           prev.responds(to: #selector(UNUserNotificationCenterDelegate.userNotificationCenter(_:willPresent:withCompletionHandler:))) {
+            previousNotificationCenterDelegate?.userNotificationCenter?(center, willPresent: notification, withCompletionHandler: completionHandler)
+            return
+        }
+
+        // Default behavior: do show non-Crisp notifications in foreground
+        if #available(iOS 14.0, *) {
+            completionHandler([.banner, .sound])
         } else {
-            completionHandler([])
+            completionHandler([.alert, .sound])
         }
     }
 
@@ -205,7 +220,18 @@ public class SwiftFlutterCrispChatPlugin: NSObject, FlutterPlugin, UIApplication
         let notification = response.notification
         if CrispSDK.isCrispPushNotification(notification) {
             CrispSDK.handlePushNotification(notification)
+            completionHandler()
+            return
         }
+
+        // Forward to previous delegate if it implements this method
+        if let prev = previousNotificationCenterDelegate as? NSObjectProtocol,
+           prev.responds(to: #selector(UNUserNotificationCenterDelegate.userNotificationCenter(_:didReceive:withCompletionHandler:))) {
+            previousNotificationCenterDelegate?.userNotificationCenter?(center, didReceive: response, withCompletionHandler: completionHandler)
+            return
+        }
+
+        // Fallback: complete
         completionHandler()
     }
 }
