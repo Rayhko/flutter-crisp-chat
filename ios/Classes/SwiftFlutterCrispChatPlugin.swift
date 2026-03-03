@@ -198,12 +198,6 @@ public class SwiftFlutterCrispChatPlugin: NSObject, FlutterPlugin, UIApplication
             return
         }
 
-        // Forward to previous delegate if it implements this method
-        if let prev = previousNotificationCenterDelegate as? NSObjectProtocol,
-           prev.responds(to: #selector(UNUserNotificationCenterDelegate.userNotificationCenter(_:willPresent:withCompletionHandler:))) {
-            previousNotificationCenterDelegate?.userNotificationCenter?(center, willPresent: notification, withCompletionHandler: completionHandler)
-            return
-        }
 
         completionHandler([])
     }
