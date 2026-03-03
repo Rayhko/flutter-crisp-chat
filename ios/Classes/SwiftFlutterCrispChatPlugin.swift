@@ -190,16 +190,13 @@ public class SwiftFlutterCrispChatPlugin: NSObject, FlutterPlugin, UIApplication
                                        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
         if CrispSDK.isCrispPushNotification(notification) {
             CrispSDK.handlePushNotification(notification)
-            if #available(iOS 14.0, *) {
-                completionHandler([.banner, .sound])
-            } else {
-                completionHandler([.alert, .sound])
-            }
-            return
         }
 
-
-        completionHandler([])
+        if #available(iOS 14.0, *) {
+            completionHandler([.banner, .sound])
+        } else {
+            completionHandler([.alert, .sound])
+        }
     }
 
     /// Handles user interactions with notifications.
