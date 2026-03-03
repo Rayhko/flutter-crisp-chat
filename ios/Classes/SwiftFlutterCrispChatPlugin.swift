@@ -219,18 +219,7 @@ public class SwiftFlutterCrispChatPlugin: NSObject, FlutterPlugin, UIApplication
         let notification = response.notification
         if CrispSDK.isCrispPushNotification(notification) {
             CrispSDK.handlePushNotification(notification)
-            completionHandler()
-            return
         }
-
-        // Forward to previous delegate if it implements this method
-        if let prev = previousNotificationCenterDelegate as? NSObjectProtocol,
-           prev.responds(to: #selector(UNUserNotificationCenterDelegate.userNotificationCenter(_:didReceive:withCompletionHandler:))) {
-            previousNotificationCenterDelegate?.userNotificationCenter?(center, didReceive: response, withCompletionHandler: completionHandler)
-            return
-        }
-
-        // Fallback: complete
         completionHandler()
     }
 }
