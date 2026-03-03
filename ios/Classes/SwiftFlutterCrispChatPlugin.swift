@@ -205,12 +205,7 @@ public class SwiftFlutterCrispChatPlugin: NSObject, FlutterPlugin, UIApplication
             return
         }
 
-        // Default behavior: do show non-Crisp notifications in foreground
-        if #available(iOS 14.0, *) {
-            completionHandler([.banner, .sound])
-        } else {
-            completionHandler([.alert, .sound])
-        }
+        completionHandler([])
     }
 
     /// Handles user interactions with notifications.
